@@ -1,0 +1,29 @@
+---
+title: "2026 FRT MAD"
+author: "Pablo Sandro"
+format: html
+editor: visual
+---
+
+## Analysis and report Winter Naked Barley 2026
+
+Analysis of field trial planted in Madison, WI during 2026.
+
+## Running Code
+
+```{r} Set up}
+Data<-openxlsx::read.xlsx("Fildbooks/2026 FRT MAD.xlsx")
+
+
+
+
+```
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).

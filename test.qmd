@@ -9,21 +9,500 @@ editor: visual
 
 Analysis of field trial planted in Madison, WI during 2026.
 
-## Running Code
-
-```{r} Set up}
-Data<-openxlsx::read.xlsx("Fildbooks/2026 FRT MAD.xlsx")
-
-
-
-
-```
-
-You can add options to executable code like this
+## Set up data
 
 ```{r}
+#| label: Set Up
+#| warning: true
+#| include: false
+# Set up code
 #| echo: false
-2 * 2
+
+library(asreml)
+library(dplyr)
+library(gt)
+
+Data<-openxlsx::read.xlsx("Fildbooks/2026 FRT MAD.xlsx")
+
+Data<- Data %>% janitor::clean_names()
+
+
+Data$col<-as.factor(Data$col)
+Data$row<-as.factor(Data$row)
+Data$rep<-as.factor(Data$rep)
+Data$ib<-as.factor(Data$ib)
+Data$genotype<-as.factor(Data$genotype)
+
+Data$test_weight_kg_h_l<-(Data$tw_g_500_m_l*200)/1000
+Data$tw_b<-Data$test_weight_kg_h_l/1.247
+Data$y_g_sqm<-((Data$plot_weight_kg)*1000)/(1.524*3.63)
+Data$Bu_ac<-((Data$y_g_sqm/454)*4046.86)/60
+
+Data<-Data[order(Data$col, Data$row),]
+library(asreml)
+
+asreml.options(maxit=100,extra=10) 
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+Heading Date analysis
+
+```{r}
+#| label: Heading Date Mixed Model
+#| include: false
+
+
+mod <- asreml(fixed = hd_julian ~ genotype + rep,
+              random = ~ rep:ib,
+              residuals = ~ ar1(col):ar1(row),
+              data = Data, workspace = 16e8)
+mod <- update.asreml(mod)
+
+# Variance components
+vc <- summary(mod)$varcomp |>
+  tibble::rownames_to_column("Component")
+
+# Residuals
+res <- data.frame(plot = Data$plot, e = mod$residuals)
+res$z <- as.numeric(scale(res$e))
+worst_hi <- res$plot[which.max(res$e)]
+worst_lo <- res$plot[which.min(res$e)]
+n_out <- sum(abs(res$z) > 3)
+
+# BLUEs
+pred <- predict(mod, classify = "genotype", workspace = 16e8, maxiter = 100)
+BLUES <- pred$pvals |>
+  dplyr::select(genotype, predicted.value, std.error) |>
+  dplyr::arrange(desc(predicted.value))
+
+top    <- BLUES[1, ]
+bottom <- BLUES[nrow(BLUES), ]
+```
+
+## Model diagnostics
+
+```{r}
+#| label: Residuals plot HD
+#| echo: false
+#| fig-cap: Residual diagnostics from the spatial model.
+plot(mod)
+```
+
+## Variance components
+
+```{r}
+#| label: Variance componenets HD
+#| echo: false
+vc |>
+  gt() |>
+  fmt_number(where(is.numeric), decimals = 3)
+```
+
+## BLUEs
+
+```{r}
+#| label: BLUES HD
+#| echo: false
+BLUES |>
+  gt() |>
+  tab_header(title = "Heading date", subtitle = "Julian date") |>
+  cols_label(genotype = "Genotype",
+             predicted.value = "BLUE",
+             std.error = "Std. Error") |>
+  fmt_number(columns = c(predicted.value, std.error), decimals = 2)
+```
+
+# BLUEs Vigor
+
+```{r}
+#| label: Vigor Mixed Model
+#| include: false
+
+Data[Data$plot == 12036, "vigor_0_9"] <- NA
+ 
+mod_vig <- asreml(fixed = vigor_0_9 ~ genotype + rep,
+              random = ~ rep:ib,
+              residuals = ~ ar1(col):ar1(row),
+              data = Data, workspace = 16e8)
+mod_vig <- update.asreml(mod_vig)
+
+# Variance components
+vc_vig <- summary(mod_vig)$varcomp |>
+  tibble::rownames_to_column("Component")
+
+# Residuals
+res <- data.frame(plot = Data$plot, e = mod$residuals)
+res$z <- as.numeric(scale(res$e))
+worst_hi <- res$plot[which.max(res$e)]
+worst_lo <- res$plot[which.min(res$e)]
+n_out <- sum(abs(res$z) > 3)
+
+```
+
+```{r}
+#| label: Residuals plot Vigor
+#| echo: false
+#| fig-cap: Residual diagnostics from the spatial model.
+plot(mod_vig)
+```
+
+```{r}
+#| label: Blues Vigor
+#| include: false
+# BLUEs
+pred_vig <- predict(mod_vig, classify = "genotype", workspace = 16e8, maxiter = 100)
+BLUES_vig <- pred_vig$pvals |>
+  dplyr::select(genotype, predicted.value, std.error) |>
+  dplyr::arrange(desc(predicted.value))
+
+top_vig    <- BLUES_vig[1, ]
+bottom_vig <- BLUES_vig[nrow(BLUES_vig), ]
+```
+
+```{r}
+#| label: Variance componenets Vigor
+#| echo: false
+vc_vig |>
+  gt() |>
+  fmt_number(where(is.numeric), decimals = 3)
+```
+
+```{r}
+#| label: BLUES Vigor table
+#| echo: false
+BLUES_vig |>
+  gt() |>
+  tab_header(title = "Spring Vigor", subtitle = "Vigor (0-9)") |>
+  cols_label(genotype = "Genotype",
+             predicted.value = "BLUE",
+             std.error = "Std. Error") |>
+  fmt_number(columns = c(predicted.value, std.error), decimals = 2)
+```
+
+# BLUEs Plant Height
+
+```{r}
+#| label: Plant Heigth Mixed Model
+#| include: false
+
+
+
+mod_ph <- asreml(fixed = ph_cm ~ genotype + rep,
+                  random = ~ rep:ib,
+                  residuals = ~ ar1(col):ar1(row),
+                  data = Data, workspace = 16e8)
+mod_ph <- update.asreml(mod_ph)
+
+# Variance components
+vc_ph <- summary(mod_ph)$varcomp |>
+  tibble::rownames_to_column("Component")
+
+# Residuals
+res <- data.frame(plot = Data$plot, e = mod$residuals)
+res$z <- as.numeric(scale(res$e))
+worst_hi <- res$plot[which.max(res$e)]
+worst_lo <- res$plot[which.min(res$e)]
+n_out <- sum(abs(res$z) > 3)
+
+```
+
+```{r}
+#| label: Residuals plot Plant heigth (cm)
+#| echo: false
+#| fig-cap: Residual diagnostics from the spatial model.
+plot(mod_ph)
+```
+
+```{r}
+#| label: PH blues Mixed Model
+#| include: false
+pred_ph <- predict(mod_ph, classify = "genotype", workspace = 16e8, maxiter = 100)
+BLUES_ph <- pred_ph$pvals |>
+  dplyr::select(genotype, predicted.value, std.error) |>
+  dplyr::arrange(desc(predicted.value))
+
+top_ph    <- BLUES_ph[1, ]
+bottom_ph <- BLUES_ph[nrow(BLUES_ph), ]
+```
+
+```{r}
+#| label: Variance componenets PH
+#| echo: false
+vc_ph |>
+  gt() |>
+  fmt_number(where(is.numeric), decimals = 3)
+```
+
+```{r}
+#| label: BLUES PLant heigth
+#| echo: false
+BLUES_ph |>
+  gt() |>
+  tab_header(title = "Spring Vigor", subtitle = "Vigor (0-9)") |>
+  cols_label(genotype = "Genotype",
+             predicted.value = "BLUE",
+             std.error = "Std. Error") |>
+  fmt_number(columns = c(predicted.value, std.error), decimals = 2)
+```
+
+# BLUEs Lod
+
+```{r}
+#| label: LOD Mixed Model
+#| include: false
+
+
+
+mod_lod <- asreml(fixed = lod_0_100 ~ genotype + rep,
+                 random = ~ rep:ib,
+                 residuals = ~ ar1(col):ar1(row),
+                 data = Data, workspace = 16e8)
+mod_lod <- update.asreml(mod_lod)
+
+# Variance components
+vc_lod <- summary(mod_lod)$varcomp |>
+  tibble::rownames_to_column("Component")
+
+# Residuals
+res <- data.frame(plot = Data$plot, e = mod$residuals)
+res$z <- as.numeric(scale(res$e))
+worst_hi <- res$plot[which.max(res$e)]
+worst_lo <- res$plot[which.min(res$e)]
+n_out <- sum(abs(res$z) > 3)
+```
+
+```{r}
+#| label: Residuals plot Loding (0-100)
+#| echo: false
+#| fig-cap: Residual diagnostics from the spatial model.
+plot(mod_ph)
+```
+
+```{r}
+#| label: LOD blues
+#| include: false
+pred_lod <- predict(mod_lod, classify = "genotype", workspace = 16e8, maxiter = 100)
+BLUES_lod <- pred_lod$pvals |>
+  dplyr::select(genotype, predicted.value, std.error) |>
+  dplyr::arrange(desc(predicted.value))
+
+top_lod    <- BLUES_lod[1, ]
+bottom_lod <- BLUES_lod[nrow(BLUES_lod), ]
+```
+
+```{r}
+#| label: Variance componenets LOD
+#| echo: false
+vc_lod |>
+  gt() |>
+  fmt_number(where(is.numeric), decimals = 3)
+```
+
+```{r}
+#| label: BLUES Lod
+#| echo: false
+BLUES_lod |>
+  gt() |>
+  tab_header(title = "Loding", subtitle = "Lod (0-100)") |>
+  cols_label(genotype = "Genotype",
+             predicted.value = "BLUE",
+             std.error = "Std. Error") |>
+  fmt_number(columns = c(predicted.value, std.error), decimals = 2)
+```
+
+# BLUEs Winter Survival 
+
+```{r}
+#| label: Winter survival Mixed Model
+#| include: false
+
+
+
+mod_ws <- asreml(fixed = winter_survival_percent ~ genotype + rep,
+                  random = ~ rep:ib,
+                  residuals = ~ ar1(col):ar1(row),
+                  data = Data, workspace = 16e8)
+mod_ws <- update.asreml(mod_ws)
+
+# Variance components
+vc_ws <- summary(mod_ws)$varcomp |>
+  tibble::rownames_to_column("Component")
+
+# Residuals
+res <- data.frame(plot = Data$plot, e = mod$residuals)
+res$z <- as.numeric(scale(res$e))
+worst_hi <- res$plot[which.max(res$e)]
+worst_lo <- res$plot[which.min(res$e)]
+n_out <- sum(abs(res$z) > 3)
+```
+
+```{r}
+#| label: Residuals plot winter survival
+#| echo: false
+#| fig-cap: Residual diagnostics from the spatial model.
+plot(mod_ws)
+```
+
+```{r}
+#| label: Winter Survival Blues 
+#| include: false
+pred_ws <- predict(mod_ws, classify = "genotype", workspace = 16e8, maxiter = 100)
+BLUES_ws <- pred_ws$pvals |>
+  dplyr::select(genotype, predicted.value, std.error) |>
+  dplyr::arrange(desc(predicted.value))
+
+top_ws    <- BLUES_ws[1, ]
+bottom_ws <- BLUES_ws[nrow(BLUES_ws), ]
+```
+
+```{r}
+#| label: Variance componenets WS
+#| echo: false
+vc_ws |>
+  gt() |>
+  fmt_number(where(is.numeric), decimals = 3)
+```
+
+```{r}
+#| label: BLUES Winter survival
+#| echo: false
+BLUES_ws |>
+  gt() |>
+  tab_header(title = "Winter Survival", subtitle = "Porcentage") |>
+  cols_label(genotype = "Genotype",
+             predicted.value = "BLUE",
+             std.error = "Std. Error") |>
+  fmt_number(columns = c(predicted.value, std.error), decimals = 2)
+```
+
+# BLUEs Test Weight
+
+```{r}
+#| label: test weight Mixed Model
+#| include: false
+
+
+
+mod_tw <- asreml(fixed = tw_b ~ genotype + rep,
+                 random = ~ rep:ib,
+                 residuals = ~ ar1(col):ar1(row),
+                 data = Data, workspace = 16e8)
+mod_tw <- update.asreml(mod_tw)
+
+# Variance components
+vc_tw <- summary(mod_tw)$varcomp |>
+  tibble::rownames_to_column("Component")
+
+# Residuals
+res <- data.frame(plot = Data$plot, e = mod$residuals)
+res$z <- as.numeric(scale(res$e))
+worst_hi <- res$plot[which.max(res$e)]
+worst_lo <- res$plot[which.min(res$e)]
+n_out <- sum(abs(res$z) > 3)
+```
+
+```{r}
+#| label: Residuals test weight (lb/b)
+#| echo: false
+#| fig-cap: Residual diagnostics from the spatial model.
+plot(mod_tw)
+```
+
+```{r}
+#| label: Test weight Blues 
+#| include: false
+pred_tw <- predict(mod_tw, classify = "genotype", workspace = 16e8, maxiter = 100)
+BLUES_tw <- pred_tw$pvals |>
+  dplyr::select(genotype, predicted.value, std.error) |>
+  dplyr::arrange(desc(predicted.value))
+
+top_tw    <- BLUES_tw[1, ]
+bottom_tw <- BLUES_tw[nrow(BLUES_tw), ]
+```
+
+```{r}
+#| label: Variance componenets tw
+#| echo: false
+vc_tw |>
+  gt() |>
+  fmt_number(where(is.numeric), decimals = 3)
+```
+
+```{r}
+#| label: Test weight blues table
+#| echo: false
+BLUES_tw |>
+  gt() |>
+  tab_header(title = "Test Weight", subtitle = "Pounds per Bushel") |>
+  cols_label(genotype = "Genotype",
+             predicted.value = "BLUE",
+             std.error = "Std. Error") |>
+  fmt_number(columns = c(predicted.value, std.error), decimals = 2)
+
+```
+
+#  
+
+# BLUEs Grain Yield 
+
+```{r}
+#| label: Grain yield Mixed Model
+#| include: false
+
+#Data[Data$plot == 12036, "ph_cm"] <- NA
+
+mod_gy <- asreml(fixed = Bu_ac ~ genotype + rep,
+                 random = ~ rep:ib,
+                 residuals = ~ ar1(col):ar1(row),
+                 data = Data, workspace = 16e8)
+mod_gy <- update.asreml(mod_gy)
+
+# Variance components
+vc_gy <- summary(mod_gy)$varcomp |>
+  tibble::rownames_to_column("Component")
+
+# Residuals
+res <- data.frame(plot = Data$plot, e = mod$residuals)
+res$z <- as.numeric(scale(res$e))
+worst_hi <- res$plot[which.max(res$e)]
+worst_lo <- res$plot[which.min(res$e)]
+n_out <- sum(abs(res$z) > 3)
+```
+
+```{r}
+#| label: Residuals plot grain yield
+#| echo: false
+#| fig-cap: Residual diagnostics from the spatial model.
+plot(mod_gy)
+```
+
+```{r}
+#| label: Grain Yield Blues 
+#| include: false
+pred_gy <- predict(mod_gy, classify = "genotype", workspace = 16e8, maxiter = 100)
+BLUES_gy <- pred_gy$pvals |>
+  dplyr::select(genotype, predicted.value, std.error) |>
+  dplyr::arrange(desc(predicted.value))
+
+top_gy    <- BLUES_gy[1, ]
+bottom_gy <- BLUES_gy[nrow(BLUES_gy), ]
+```
+
+```{r}
+#| label: Variance componenets
+#| echo: false
+vc_gy |>
+  gt() |>
+  fmt_number(where(is.numeric), decimals = 3)
+```
+
+```{r}
+#| label: BLUES GY
+#| echo: false
+BLUES_gy |>
+  gt() |>
+  tab_header(title = "Grain yield", subtitle = "Bushels per acre") |>
+  cols_label(genotype = "Genotype",
+             predicted.value = "BLUE",
+             std.error = "Std. Error") |>
+  fmt_number(columns = c(predicted.value, std.error), decimals = 2)
+```

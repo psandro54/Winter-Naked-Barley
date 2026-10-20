@@ -1,0 +1,568 @@
+---
+title: "2020 Naked Winter Barley"
+author: "Pablo Sandro"
+format: pdf
+editor: visual
+---
+
+## Winter Naked Barley 2020
+
+During 2020 we planted three winter barley trials, AMBA its a set of Experimental cover lines coming from Oregon state university, FRT its a set of Naked Barley lines coming from OREI Naked Barley, and HB its a subset of Naked Barley that survived from the previous year fall Diversity panel (DIV), and its checks.
+
+```{r}
+#| label: setup
+#| include: false
+
+# Set up code
+suppressPackageStartupMessages({
+  library(asreml)
+  library(dplyr)
+  library(gt)
+  library(janitor)
+})
+
+AMBA<-openxlsx::read.xlsx("Fildbooks/2020/2020 AMBA LTT Field book.xlsx")
+
+AMBA<- AMBA %>% janitor::clean_names()
+
+AMBA$tw_b<-AMBA$test_weight_kg_hl/1.247
+
+AMBA$y_g_sqm<-((AMBA$weight_kg*((100-AMBA$moisture)/88))*1000)/(1.524*3.63)
+AMBA$Bu_ac<-((AMBA$y_g_sqm/454)*4046.86)/60
+
+AMBA<-AMBA[order(AMBA$col, AMBA$row),]
+AMBA<-AMBA[,c(1,3:5, 7, 26, 28)]
+AMBA$exp<-"AMBA"
+AMBA$tw_b[AMBA$tw_b<20]<-NA
+AMBA$Bu_ac[AMBA$Bu_ac<20]<-NA
+FRT<-openxlsx::read.xlsx("Fildbooks/2020/2020 FRT MAD Fieldbook.xlsx")
+
+FRT<- FRT %>% janitor::clean_names()
+
+FRT$tw_b<-FRT$test_weight_kg_hetolitre/1.247
+FRT$y_g_sqm<-((FRT$weight_kg*((100-FRT$moisture)/88))*1000)/(1.524*3.63)
+FRT$Bu_ac<-((FRT$y_g_sqm/454)*4046.86)/60
+
+FRT<-FRT[order(FRT$col, FRT$row),]
+FRT<-FRT[,c(1,3:5, 7, 31, 33)]
+FRT$exp<-"FRT"
+FRT$tw_b[FRT$tw_b<20]<-NA
+FRT$Bu_ac[FRT$Bu_ac<20]<-NA
+
+HB<-openxlsx::read.xlsx("Fildbooks/2020/2020 HB MAD Fieldbook.xlsx")
+
+HB<- HB%>% janitor::clean_names()
+HB$tw_b<-HB$test_weight_kg_hl/1.247
+HB$y_g_sqm<-((HB$plot_weight_kg*((100-HB$moisture_percent)/88))*1000)/(1.524*3.63)
+HB$Bu_ac<-((HB$y_g_sqm/454)*4046.86)/60
+
+HB<- HB[order(HB$col, HB$row),]
+HB<-HB[,c(1,3:5, 7, 32, 34)]
+HB$exp<-"HB"
+HB$tw_b[HB$tw_b<20]<-NA
+HB$Bu_ac[HB$Bu_ac<20]<-NA
+library(asreml)
+
+asreml.options(maxit=100,extra=10) 
+```
+
+```{r}
+#| warning: false
+#| include: false
+#| echo: false
+#| label: Test weight AMBA Mixed Model
+
+AMBA$col<-as.factor(AMBA$col)
+AMBA$row<-as.factor(AMBA$row)
+AMBA$rep<-as.factor(AMBA$rep)
+#AMBA$ib<-as.factor(AMBA$ib)
+AMBA$genotype<-as.factor(AMBA$genotype)
+
+AMBA[AMBA$plot==13249, "tw_b"]<-NA
+AMBA[AMBA$plot==13239, "tw_b"]<-NA
+tw_amba <- asreml(fixed = AMBA$tw_b ~ genotype,
+              random = ~ rep,
+              residuals = ~ ar1(col):ar1(row),
+              data = AMBA, workspace = 16e8)
+tw_amba <- update.asreml(tw_amba)
+
+# Variance components
+vc <- summary(tw_amba)$varcomp |>
+  tibble::rownames_to_column("Component")
+
+# Residuals
+res <- data.frame(plot = AMBA$plot, e = tw_amba$residuals)
+res$z <- as.numeric(scale(res$e))
+worst_hi <- res$plot[which.max(res$e)]
+worst_lo <- res$plot[which.min(res$e)]
+n_out <- sum(abs(res$z) > 3)
+
+# BLUEs
+pred_tw_amba <- predict(tw_amba, classify = "genotype", workspace = 16e8, maxiter = 100)
+BLUES_tw_amba <- pred_tw_amba$pvals |>
+  dplyr::select(genotype, predicted.value, std.error) |>
+  dplyr::arrange(desc(predicted.value))
+
+top    <- BLUES_tw_amba[1, ]
+bottom <- BLUES_tw_amba[nrow(BLUES_tw_amba), ]
+```
+
+```{r}
+#| label: Residuals plot TW AMBA
+#| warning: true
+#| include: false
+#| echo: false
+#| fig-cap: Residual diagnostics from the spatial model.
+
+plot(tw_amba)
+```
+
+```{r}
+#| label: Variance componenets TW AMABA
+#| warning: true
+#| include: false
+#| echo: false
+vc |>
+  gt() |>
+  fmt_number(where(is.numeric), decimals = 3)
+```
+
+```{r}
+#| warning: true
+#| echo: false
+#| label: BLUES TW AMBA
+BLUES_tw_amba |>
+  gt() |>
+  tab_header(title = "TW AMBA", subtitle = "lb/bushel") |>
+  cols_label(genotype = "Genotype",
+             predicted.value = "TW (lb/B)",
+             std.error = "S.E.") |>
+  fmt_number(columns = c(predicted.value, std.error), decimals = 2)|>
+  tab_options(table.width = pct(50),
+              table.align = "center",
+              heading.align = "center")
+```
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false
+#| label: Grain yield AMBA Mixed Model
+
+
+#AMBA[AMBA$plot==13249, "tw_b"]<-NA
+#AMBA[AMBA$plot==13239, "tw_b"]<-NA
+gy_amba <- asreml(fixed = AMBA$Bu_ac ~ genotype,
+              random = ~ rep,
+              residuals = ~ ar1(col):ar1(row),
+              data = AMBA, workspace = 16e8)
+gy_amba <- update.asreml(gy_amba)
+
+# Variance components
+vc <- summary(gy_amba)$varcomp |>
+  tibble::rownames_to_column("Component")
+
+# Residuals
+res <- data.frame(plot = AMBA$plot, e = gy_amba$residuals)
+res$z <- as.numeric(scale(res$e))
+worst_hi <- res$plot[which.max(res$e)]
+worst_lo <- res$plot[which.min(res$e)]
+n_out <- sum(abs(res$z) > 3)
+
+# BLUEs
+pred_gy_amba <- predict(gy_amba, classify = "genotype", workspace = 16e8, maxiter = 100)
+BLUES_gy_amba <- pred_gy_amba$pvals |>
+  dplyr::select(genotype, predicted.value, std.error) |>
+  dplyr::arrange(desc(predicted.value))
+
+top    <- BLUES_gy_amba[1, ]
+bottom <- BLUES_gy_amba[nrow(BLUES_gy_amba), ]
+```
+
+```{r}
+#| label: Residuals plot GY AMBA
+#| warning: true
+#| include: false
+#| echo: false
+#| fig-cap: Residual diagnostics from the spatial model.
+plot(gy_amba)
+```
+
+```{r}
+#| label: Variance componenets GY AMBA
+#| warning: true
+#| include: false
+#| echo: false
+vc |>
+  gt() |>
+  fmt_number(where(is.numeric), decimals = 3)
+```
+
+```{r}
+#| label: BLUES GY AMBA Table
+#| warning: true
+#| echo: false
+BLUES_gy_amba |>
+  gt() |>
+  tab_header(title = "Grain Yield AMBA", subtitle = "Bushel/Acre") |>
+  cols_label(genotype = "Genotype",
+             predicted.value = "Grain Yield (B/A)",
+             std.error = "S. E.") |>
+  fmt_number(columns = c(predicted.value, std.error), decimals = 2)|>
+  tab_options(table.width = pct(50),
+              table.align = "center",
+              heading.align = "center")
+```
+
+# 
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false
+#| label: FRT test weight Mixed Model
+
+FRT$col<-as.factor(FRT$col)
+FRT$row<-as.factor(FRT$row)
+FRT$rep<-as.factor(FRT$rep)
+#FRT$ib<-as.factor(FRT$ib)
+FRT$genotype<-as.factor(FRT$genotype)
+
+tw_FRT <- asreml(fixed = FRT$tw_b ~ genotype,
+              random = ~ rep,
+              residuals = ~ ar1(col):ar1(row),
+              data = FRT, workspace = 16e8)
+tw_FRT <- update.asreml(tw_FRT)
+
+# Variance components
+vc <- summary(tw_FRT)$varcomp |>
+  tibble::rownames_to_column("Component")
+
+# Residuals
+res <- data.frame(plot = FRT$plot, e = tw_FRT$residuals)
+res$z <- as.numeric(scale(res$e))
+worst_hi <- res$plot[which.max(res$e)]
+worst_lo <- res$plot[which.min(res$e)]
+n_out <- sum(abs(res$z) > 3)
+
+
+```
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false
+#| label: Residuals plot test weight FRT
+#| fig-cap: Residual diagnostics from the spatial model.
+plot(tw_FRT)
+```
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false
+#| label: Variance componenets TW FRT
+vc |>
+  gt() |>
+  fmt_number(where(is.numeric), decimals = 3)
+```
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false
+#| label: BLUES TW FRT
+
+# BLUEs
+pred_tw_FRT <- predict(tw_FRT, classify = "genotype", workspace = 16e8, maxiter = 100)
+BLUES_tw_FRT <- pred_tw_FRT$pvals |>
+  dplyr::select(genotype, predicted.value, std.error) |>
+  dplyr::arrange(desc(predicted.value))
+
+#top    <- BLUES_tw_FRT[1, ]
+#bottom <- BLUES_tw_FRT[nrow(BLUES_tw_FRT), ] 
+
+```
+
+```{r}
+#| warning: true
+#| echo: false
+#| label: BLUES table TW FRT
+
+BLUES_tw_FRT |>
+  gt() |>
+  tab_header(title = "TW FRT", subtitle = "lb/bushel") |>
+  cols_label(genotype = "Genotype",
+             predicted.value = "TW (lb/B)",
+             std.error = "S.E.") |>
+  fmt_number(columns = c(predicted.value, std.error), decimals = 2)|>
+  tab_options(table.width = pct(50),
+              table.align = "center",
+              heading.align = "center")
+```
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false
+#| label: FRT grain yield Mixed Model
+
+FRT$col<-as.factor(FRT$col)
+FRT$row<-as.factor(FRT$row)
+FRT$rep<-as.factor(FRT$rep)
+#FRT$ib<-as.factor(FRT$ib)
+FRT$genotype<-as.factor(FRT$genotype)
+
+gy_FRT <- asreml(fixed = FRT$Bu_ac ~ genotype,
+              random = ~ rep,
+              residuals = ~ ar1(col):ar1(row),
+              data = FRT, workspace = 16e8)
+gy_FRT <- update.asreml(gy_FRT)
+
+# Variance components
+vc <- summary(gy_FRT)$varcomp |>
+  tibble::rownames_to_column("Component")
+
+# Residuals
+res <- data.frame(plot = FRT$plot, e = gy_FRT$residuals)
+res$z <- as.numeric(scale(res$e))
+worst_hi <- res$plot[which.max(res$e)]
+worst_lo <- res$plot[which.min(res$e)]
+n_out <- sum(abs(res$z) > 3)
+
+```
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false
+#| label: Residuals plot grain yield FRT
+#| fig-cap: Residual diagnostics from the spatial model.
+plot(tw_FRT)
+```
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false
+#| label: Variance componenets grain yield FRT
+
+vc |>
+  gt() |>
+  fmt_number(where(is.numeric), decimals = 3)
+```
+
+```{r}
+#| warning: false
+#| include: false
+#| echo: false
+#| label: BLUES grain yield FRT
+# BLUEs
+pred_gy_FRT <- predict(gy_FRT, classify = "genotype", workspace = 16e8, maxiter = 100)
+BLUES_gy_FRT <- pred_gy_FRT$pvals |>
+  dplyr::select(genotype, predicted.value, std.error) |>
+  dplyr::arrange(desc(predicted.value))
+
+```
+
+```{r}
+#| warning: true
+#| echo: false
+#| label: BLUES grain yield FRT table
+BLUES_gy_FRT |>
+  gt() |>
+  tab_header(title = "Grain Yield FRT", subtitle = "Bushel/Acre") |>
+  cols_label(genotype = "Genotype",
+             predicted.value = "Grain Yield (B/A) ",
+             std.error = "S.E.") |>
+  fmt_number(columns = c(predicted.value, std.error), decimals = 2)|>
+  tab_options(table.width = pct(50),
+              table.align = "center",
+              heading.align = "center")
+```
+
+# 
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false
+#| label: HB test weight Mixed Model
+
+
+HB<-HB[1:30,]
+HB$col<-as.factor(HB$col)
+HB$row<-as.factor(HB$row)
+HB$rep<-as.factor(HB$rep)
+#HB$ib<-as.factor(HB$ib)
+HB$genotype<-as.factor(HB$genotype)
+
+ HB[HB$plot==12129, "rep"]<-2
+ HB[HB$plot==12130, "rep"]<-2
+ 
+ HB<-HB[order(HB$col, HB$row),]
+HB[HB$plot==12128, "tw_b"]<-NA
+# HB[HB$plot==12060, "tw_b"]<-NA
+# HB[HB$plot==12057, "tw_b"]<-NA
+tw_HB <- asreml(fixed = HB$tw_b ~ genotype,
+              random = ~ rep,
+              residuals = ~ ar1(col):ar1(row),
+              data = HB, workspace = 16e8)
+tw_HB <- update.asreml(tw_HB)
+
+# Variance components
+vc <- summary(tw_HB)$varcomp |>
+  tibble::rownames_to_column("Component")
+
+# Residuals
+res <- data.frame(plot = HB$plot, e = tw_HB$residuals)
+res$z <- as.numeric(scale(res$e))
+worst_hi <- res$plot[which.max(res$e)]
+worst_lo <- res$plot[which.min(res$e)]
+n_out <- sum(abs(res$z) > 3)
+
+
+
+
+```
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false
+#| label: Residuals plot tw HB
+#| fig-cap: Residual diagnostics from the spatial model.
+plot(tw_HB)
+```
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false
+#| label: Variance componenets TW-HB
+vc |>
+  gt() |>
+  fmt_number(where(is.numeric), decimals = 3)
+```
+
+``` r
+```
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false 
+#| label: BLUES tw HB
+
+# BLUEs
+pred_tw_HB <- predict(tw_HB, classify = "genotype", workspace = 16e8, maxiter = 100)
+BLUES_tw_HB <- pred_tw_HB$pvals |>
+  dplyr::select(genotype, predicted.value, std.error) |>
+  dplyr::arrange(desc(predicted.value))
+```
+
+```{r}
+#| warning: true
+#| echo: false
+#| label: BLUES Test weight table
+BLUES_tw_HB |>
+  gt() |>
+  tab_header(title = "Test weight HB", subtitle = "lb/Bushel") |>
+  cols_label(genotype = "Genotype",
+             predicted.value = "TW (lb/B)",
+             std.error = "S.E.") |>
+  fmt_number(columns = c(predicted.value, std.error), decimals = 2)|>
+  tab_options(table.width = pct(50),
+              table.align = "center",
+              heading.align = "center")
+```
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false
+#| label: HB grain yield Mixed Model
+
+HB$col<-as.factor(HB$col)
+HB$row<-as.factor(HB$row)
+HB$rep<-as.factor(HB$rep)
+#FRT$ib<-as.factor(FRT$ib)
+HB$genotype<-as.factor(HB$genotype)
+
+# FRT[FRT$plot==12021, "tw_b"]<-NA
+# FRT[FRT$plot==12049, "tw_b"]<-NA
+# FRT[FRT$plot==12008, "tw_b"]<-NA
+# FRT[FRT$plot==12060, "tw_b"]<-NA
+# FRT[FRT$plot==12057, "tw_b"]<-NA
+gy_HB <- asreml(fixed = HB$Bu_ac ~ genotype,
+              random = ~ rep,
+              residuals = ~ ar1(col):ar1(row),
+              data = HB, workspace = 16e8)
+gy_HB <- update.asreml(gy_HB)
+
+# Variance components
+vc <- summary(gy_HB)$varcomp |>
+  tibble::rownames_to_column("Component")
+
+# Residuals
+res <- data.frame(plot = HB$plot, e = gy_HB$residuals)
+res$z <- as.numeric(scale(res$e))
+worst_hi <- res$plot[which.max(res$e)]
+worst_lo <- res$plot[which.min(res$e)]
+n_out <- sum(abs(res$z) > 3)
+
+```
+
+```{r}
+#| warning: true
+#| include: false
+#| echo: false
+#| label: Residuals plot GY HB
+#| fig-cap: Residual diagnostics from the spatial model.
+
+plot(gy_HB)
+```
+
+```{r}
+#| warning: false
+#| include: false
+#| echo: false
+#| label: Variance componenets GY HB
+
+vc |>
+  gt() |>
+  fmt_number(where(is.numeric), decimals = 3)
+```
+
+```{r}
+#| warning: false
+#| include: false
+#| echo: false
+#| label: BLUES Grain yield HB
+
+# BLUEs
+pred_gy_HB <- predict(gy_HB, classify = "genotype", workspace = 16e8, maxiter = 100)
+BLUES_gy_HB <- pred_gy_HB$pvals |>
+  dplyr::select(genotype, predicted.value, std.error) |>
+  dplyr::arrange(desc(predicted.value))
+```
+
+```{r}
+#| warning: true
+#| echo: false
+#| label: BLUES grain yield table HB
+BLUES_gy_HB |>
+  gt() |>
+  tab_header(title = "grain yield HB", subtitle = "Bushel/Acre") |>
+  cols_label(genotype = "Genotype",
+             predicted.value = "Grain yield (B/A)",
+             std.error = "Std. Error") |>
+  fmt_number(columns = c(predicted.value, std.error), decimals = 2)|>
+  tab_options(table.width = pct(50),
+              table.align = "center",
+              heading.align = "center")
+```
+
+```{r}
+
+```

@@ -309,7 +309,7 @@ BLUES_lod |>
   fmt_number(columns = c(predicted.value, std.error), decimals = 2)
 ```
 
-# BLUEs Winter Survival 
+# BLUEs Winter Survival
 
 ```{r}
 #| label: Winter survival Mixed Model
@@ -440,9 +440,9 @@ BLUES_tw |>
 
 ```
 
-#  
+# 
 
-# BLUEs Grain Yield 
+# BLUEs Grain Yield
 
 ```{r}
 #| label: Grain yield Mixed Model
